@@ -8,8 +8,6 @@ screen. It starts at b1.7.3 and climbs to 1.14.4.
 
 **AltShaders** is its addon for Iris-format shader packs. It requires Altrender.
 
-Status: pre-alpha, Phase 0 (scaffold and recon). Nothing renders differently yet. The plan is in `development.md`.
-
 ## Building
 
 ```
