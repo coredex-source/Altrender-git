@@ -1,0 +1,110 @@
+// Dev-run switches for every Minecraft node (development.md 0.2), applied by gradle/mc-node.gradle. Gradle properties
+// are mapped to the game JVM's system properties and environment.
+//
+// Which mods run:
+//   :altrender:mc:<mc>:runClient   Altrender alone
+//   :altshaders:mc:<mc>:runClient  Altrender + AltShaders
+//
+// -P switches (build side):
+//   altrender.runJava=21|25            JDK for the game (default: java_version)
+//   altrender.legacyfix=false          without LegacyFix
+//   altrender.gpu=nvidia               PRIME render offload to the NVIDIA GPU (development.md 0.7)
+//   altrender.gpu=llvmpipe             Mesa software rasteriser (deterministic baseline for screenshot diffs)
+//   altrender.apitrace=glx|egl|<.so>   record the run with apitrace (the wrapper is preloaded and given to LWJGL
+//                                      and SDL as their GL library): glx when SDL runs on X11/XWayland, egl on
+//                                      Wayland (the log's video= says which); the trace goes to <runDir>/traces/
+//   altrender.mixinExport=true         dump post-mixin classes to <runDir>/.mixin.out
+//   altrender.lwjglDebug=true          LWJGL debug output and native-loader logging (0.5)
+//   altrender.env.NAME=value           environment variable NAME for the game
+//   altrender.runDir=<dir>             game directory of the run (default run/<mc>; the scene harness uses its own)
+//   altrender.mergeTracker=false       build LWJGL's GL11 without the state tracker and call counter (A/B, 1.4)
+//   altrender.jvmArgs="..."            extra JVM arguments for the game (e.g. a JFR recording, 3.1)
+// Every other -Paltrender.<key>=<value> becomes -Daltrender.<key>=<value> for the game: tier=gl33|gl45,
+// renderer=off, glDebug, debug.<path>.disable, scene, ...
+
+def buildOnly = ['altrender.runJava', 'altrender.legacyfix', 'altrender.gpu', 'altrender.apitrace',
+                 'altrender.mixinExport', 'altrender.lwjglDebug', 'altrender.runDir', 'altrender.mergeTracker', 'altrender.jvmArgs']
+def flag = { String key -> (findProperty(key) ?: 'false').toString().toBoolean() }
+
+def runProps = [:]
+project.properties.each { k, v ->
+    def key = k.toString()
+    if (key.startsWith('altrender.') && !(key in buildOnly) && !key.startsWith('altrender.env.')) {
+        runProps[key] = v.toString()
+    }
+}
+if (flag('altrender.mixinExport')) {
+    runProps['mixin.debug.export'] = 'true'
+}
+if (flag('altrender.lwjglDebug')) {
+    runProps['org.lwjgl.util.Debug'] = 'true'
+    runProps['org.lwjgl.util.DebugLoader'] = 'true'
+}
+
+def runEnv = [:]
+def gpu = findProperty('altrender.gpu')?.toString()
+switch (gpu) {
+    case null:
+        break
+    case 'nvidia':
+        runEnv['__NV_PRIME_RENDER_OFFLOAD'] = '1'
+        runEnv['__GLX_VENDOR_LIBRARY_NAME'] = 'nvidia'
+        runEnv['__VK_LAYER_NV_optimus'] = 'NVIDIA_only'
+        break
+    case 'llvmpipe':
+        runEnv['LIBGL_ALWAYS_SOFTWARE'] = '1'
+        break
+    default:
+        throw new GradleException("unknown altrender.gpu '${gpu}' (known: nvidia, llvmpipe)")
+}
+
+def apitrace = findProperty('altrender.apitrace')?.toString()
+if (apitrace != null) {
+    def wrapper
+    if (apitrace in ['glx', 'egl']) {
+        def dirs = ['/usr/lib/apitrace/wrappers', '/usr/lib64/apitrace/wrappers', '/usr/local/lib/apitrace/wrappers',
+                    '/run/current-system/sw/lib/apitrace/wrappers']
+        wrapper = dirs.collect { new File(it, "${apitrace}trace.so") }.find { it.isFile() }
+        if (wrapper == null) {
+            throw new GradleException("apitrace's ${apitrace}trace.so not found in ${dirs}; pass its path instead")
+        }
+    } else {
+        wrapper = new File(apitrace)
+        if (!wrapper.isFile()) {
+            throw new GradleException("altrender.apitrace: no such file ${wrapper}")
+        }
+    }
+    def traces = rootProject.file("${findProperty('altrender.runDir') ?: "run/${stonecutter.current.project}"}/traces")
+    runEnv['LD_PRELOAD'] = wrapper.absolutePath
+    // LWJGL and SDL3 each open the GL library themselves and look functions up on their own handle, which LD_PRELOAD
+    // doesn't intercept: without these only the swaps are traced. glx for SDL on X11 (LWJGL then uses GLX), egl for
+    // SDL on Wayland (SdlWindow sets LWJGL's context API to match).
+    boolean egl = wrapper.name.contains('egl')
+    runEnv[egl ? 'SDL_EGL_LIBRARY' : 'SDL_OPENGL_LIBRARY'] = wrapper.absolutePath
+    runProps[egl ? 'org.lwjgl.egl.libname' : 'org.lwjgl.opengl.libname'] = wrapper.absolutePath
+    runEnv['TRACE_FILE'] = new File(traces, "${project.path.split(':')[1]}-${new Date().format('yyyyMMdd-HHmmss')}.trace").absolutePath
+    tasks.withType(JavaExec).configureEach {
+        if (name.startsWith('run')) {
+            doFirst { traces.mkdirs() }
+        }
+    }
+}
+
+project.properties.each { k, v ->
+    if (k.toString().startsWith('altrender.env.')) {
+        runEnv[k.toString().substring('altrender.env.'.length())] = v.toString()
+    }
+}
+
+def runJava = (findProperty('altrender.runJava') ?: rootProject.java_version).toString() as int
+tasks.withType(JavaExec).configureEach {
+    if (name.startsWith('run')) {
+        javaLauncher = javaToolchains.launcherFor { languageVersion = JavaLanguageVersion.of(runJava) }
+        systemProperties(runProps)
+        environment(runEnv)
+        def extraJvm = findProperty('altrender.jvmArgs')?.toString()
+        if (extraJvm) {
+            jvmArgs(extraJvm.split(' ') as List)
+        }
+    }
+}

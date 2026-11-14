@@ -1,0 +1,7 @@
+// Build logic for Altrender (included from ../settings.gradle): the LWJGL nesting/merge task.
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+    }
+}
+rootProject.name = 'build-logic'

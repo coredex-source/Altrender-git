@@ -1,0 +1,7 @@
+// Stonecutter controller for AltShaders' Minecraft nodes (:altshaders:mc:<mc>). See settings.gradle.
+// Keep the active version the same as altrender/mc/stonecutter.gradle.
+plugins {
+    id 'dev.kikugie.stonecutter'
+}
+
+stonecutter.active 'b1.7.3'

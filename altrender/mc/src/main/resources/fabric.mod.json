@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "altrender",
+  "version": "${version}",
+  "name": "Altrender",
+  "description": "A modern, fast renderer for old Minecraft versions: LWJGL 3 with SDL3, GL 3.3 and GL 4.5+ tiers, a modern video settings screen and debug screen.",
+  "authors": ["${mod_author}"],
+  "license": "${license}",
+  "environment": "client",
+  "languageAdapters": {
+    "altrender_early": "com.coredex.altrender.mc.boot.EarlyHook"
+  },
+  "entrypoints": {
+    "preLaunch": ["com.coredex.altrender.mc.boot.AltrenderPreLaunch"]
+  },
+  "mixins": ["altrender.mixins.json"],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "${minecraft_dependency}",
+    "java": ">=${java_version}"
+  },
+  "recommends": {
+    "legacyfix": "*"
+  }
+}

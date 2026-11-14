@@ -1,0 +1,59 @@
+// Root project. Loom and Ploceus are put on the root classloader once, so both Stonecutter trees share them.
+plugins {
+    id 'net.fabricmc.fabric-loom-remap' apply false
+    id 'ploceus' apply false
+    // build-logic: LwjglNestTask, GenerateContextCapabilities
+    id 'altrender.build' apply false
+}
+
+// Plain-Java projects (api, common): same Java level as the mod jars.
+configure([project(':altrender:api'), project(':altrender:common'), project(':altshaders:common')]) {
+    apply plugin: 'java-library'
+
+    // One group per mod: the two mods' projects share names (common, b1.7.3), and Gradle identifies projects by
+    // group:name, so a shared group would make :altshaders:common and :altrender:common the same module.
+    group = "${rootProject.maven_group}.${path.split(':')[1]}"
+    version = rootProject.mod_version
+
+    repositories {
+        mavenCentral()
+    }
+
+    java {
+        toolchain.languageVersion = JavaLanguageVersion.of(rootProject.java_version as int)
+        withSourcesJar()
+    }
+
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
+        options.release = rootProject.java_version as int
+    }
+
+    // Consumed by the mc nodes, which compile these sources into their own (remapped) jar, so one mod jar holds
+    // api + common + mc.
+    configurations.consumable('javaSources')
+    configurations.consumable('resourceSources')
+    artifacts {
+        add('javaSources', file('src/main/java'))
+        add('resourceSources', file('src/main/resources'))
+    }
+}
+
+project(':altrender:common') {
+    dependencies {
+        api project(':altrender:api')
+        // LWJGL 3 is embedded by Altrender's node (altrender:lwjgl2); common compiles against it.
+        compileOnly "org.lwjgl:lwjgl:${rootProject.lwjgl_version}"
+        compileOnly "org.lwjgl:lwjgl-opengl:${rootProject.lwjgl_version}"
+    }
+}
+
+project(':altshaders:common') {
+    dependencies {
+        // AltShaders talks to Altrender only through the public API (development.md 0.2).
+        compileOnly project(':altrender:api')
+        // GL constants only (compile-time constants, inlined): AltShaders makes no GL calls of its own.
+        compileOnly "org.lwjgl:lwjgl:${rootProject.lwjgl_version}"
+        compileOnly "org.lwjgl:lwjgl-opengl:${rootProject.lwjgl_version}"
+    }
+}

@@ -1,0 +1,31 @@
+// Central script for every Altrender node (:altrender:mc:<mc>): the shared node setup plus Altrender's bundled
+// projects (api + common).
+apply from: rootProject.file('gradle/mc-node.gradle')
+
+base {
+    archivesName = 'altrender'
+}
+
+dependencies {
+    compileOnly project(':altrender:common')
+    bundledJava project(path: ':altrender:api', configuration: 'javaSources')
+    bundledJava project(path: ':altrender:common', configuration: 'javaSources')
+    bundledResources project(path: ':altrender:common', configuration: 'resourceSources')
+}
+
+// Fabric jar-in-jar: LWJGL 3 (merged with the LWJGL2 bridges) and the LWJGL2 layer (altrender:lwjgl2).
+tasks.named('remapJar') {
+    nestedJars.from(project(':altrender:lwjgl2').nestedJarFiles)
+}
+// LWJGL's natives for every platform and their licence texts, as resources (NativesBoot extracts them, 0.5).
+tasks.named('processResources', ProcessResources) {
+    from(project(':altrender:lwjgl2').nativesResources)
+}
+
+loom {
+    mods {
+        altrender {
+            sourceSet sourceSets.main
+        }
+    }
+}

@@ -1,0 +1,137 @@
+// The LWJGL2 compatibility layer (development.md 0.4, owner: no legacy-lwjgl3, everything embedded):
+// - src/main: LWJGL2's API (Display, Keyboard, Mouse, GLContext, GLU, ...) on LWJGL 3 + SDL3 + OpenAL Soft;
+// - src/merge: donors, the LWJGL2-only static methods merged into LWJGL 3's own classes at build time (owner,
+//   2026-11-12): <donor package>/org/lwjgl/opengl/GL11 adds to org/lwjgl/opengl/GL11;
+// - nestLwjgl: the jars Altrender nests (Fabric jar-in-jar): LWJGL 3's Java jars (merged where donors exist) and this
+//   project's jar. Their classes win over the profile's LWJGL2 under Knot (docs/decisions.md 2026-11-12);
+// - packNatives: LWJGL's natives for every platform as resources of Altrender's own jar (altrender/natives/<os>-<arch>/,
+//   with a SHA-256 index) and the licence texts (licenses/); NativesBoot extracts them at preLaunch (0.5).
+import com.coredex.altrender.build.GenerateContextCapabilities
+import com.coredex.altrender.build.LwjglNestTask
+import com.coredex.altrender.build.PackNativesTask
+
+apply plugin: 'java-library'
+
+group = "${rootProject.maven_group}.altrender"
+version = rootProject.mod_version
+
+def lwjglVersion = rootProject.lwjgl_version
+def lwjglModules = rootProject.lwjgl_modules.split(',')*.trim()
+def lwjglNatives = rootProject.lwjgl_natives.split(',')*.trim()
+def javaVersion = rootProject.java_version as int
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(javaVersion)
+}
+
+sourceSets {
+    merge
+}
+
+configurations {
+    // What gets nested: LWJGL 3's Java jars, without transitive extras.
+    nested {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+    // LWJGL's natives jars, repacked by packNatives.
+    natives {
+        canBeConsumed = false
+        canBeResolved = true
+        transitive = false
+    }
+}
+
+dependencies {
+    lwjglModules.each { module ->
+        compileOnly "org.lwjgl:${module}:${lwjglVersion}"
+        mergeCompileOnly "org.lwjgl:${module}:${lwjglVersion}"
+        nested "org.lwjgl:${module}:${lwjglVersion}"
+        lwjglNatives.each { platform ->
+            natives "org.lwjgl:${module}:${lwjglVersion}:natives-${platform}"
+        }
+    }
+    // Altrender's log (common is bundled into Altrender's own jar, so it's there at runtime).
+    compileOnly project(':altrender:common')
+    // Donors call into the layer (LWJGLException, OpenAl) and into common (GlStateTracker, FrameStats: 1.4).
+    mergeCompileOnly sourceSets.main.output
+    mergeCompileOnly project(':altrender:common')
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = javaVersion
+}
+// Donor bytecode is copied into LWJGL 3's classes (class file version 52). Plain static calls are valid there at any
+// source level; LwjglNestTask rejects invokedynamic (lambdas, string concatenation), the one thing that isn't.
+
+def generatedCaps = layout.buildDirectory.dir('generated/sources/contextCapabilities')
+def genCaps = tasks.register('generateContextCapabilities', GenerateContextCapabilities) {
+    openglJar.from(configurations.compileClasspath.filter { it.name == "lwjgl-opengl-${lwjglVersion}.jar" })
+    outputDirectory = generatedCaps
+}
+sourceSets.main.java.srcDir(genCaps)
+
+def nest = tasks.register('nestLwjgl', LwjglNestTask) {
+    jars.from(configurations.nested)
+    jars.from(tasks.named('jar'))
+    donors.from(sourceSets.merge.output.classesDirs)
+    donorPackage = 'com.coredex.altrender.lwjgl2.merge'
+    // LWJGL 3's AL.destroy() is package-private; LWJGL2 callers (paulscode) need it public.
+    publicize.add('org/lwjgl/openal/AL.destroy()V')
+    // The state tracker's GL11 replacements (1.4) and FrameStats' GL call counter (1.3; FrameStats is in common,
+    // bundled into Altrender's jar). Dev A/B only: -Paltrender.mergeTracker=false leaves both out.
+    def mergeTracker = (findProperty('altrender.mergeTracker') ?: 'true').toString().toBoolean()
+    mergeReplacements = mergeTracker
+    if (mergeTracker) {
+        countCalls.add('org/lwjgl/opengl/GL11=com/coredex/altrender/debug/FrameStats.glCalls')
+    }
+    modIdPrefix = 'altrender_'
+    outputDirectory = layout.buildDirectory.dir('nested')
+}
+
+tasks.named('jar', Jar) {
+    archiveBaseName = 'altrender-lwjgl2'
+}
+
+def packNatives = tasks.register('packNatives', PackNativesTask) {
+    nativeJars.from(configurations.natives)
+    licenses.from(fileTree('licenses') { exclude 'README.md' })
+    // LWJGL classifier → <os>-<arch> directory (LWJGL's own natives layout)
+    platforms.set(lwjglNatives.collect { it.contains('-') ? it : "${it}-x64" })
+    outputDirectory = layout.buildDirectory.dir('natives-resources')
+}
+// OpenAL Soft's source for releases (LGPL; owner 2026-11-12: attached to every release): the exact commit LWJGL built.
+tasks.register('openalSource') {
+    description = 'Downloads the OpenAL Soft source Altrender ships binaries of, for the release (checksum-pinned).'
+    def commit = rootProject.openal_soft_commit
+    def expected = rootProject.openal_soft_source_sha256
+    def archive = layout.buildDirectory.file("release/openal-soft-${commit}.tar.gz")
+    inputs.property('commit', commit)
+    outputs.file(archive)
+    doLast {
+        def target = archive.get().asFile
+        target.parentFile.mkdirs()
+        new URL("https://github.com/LWJGL-CI/openal-soft/archive/${commit}.tar.gz").withInputStream { is ->
+            target.withOutputStream { it << is }
+        }
+        def sha = java.security.MessageDigest.getInstance('SHA-256').digest(target.bytes).encodeHex().toString()
+        if (sha != expected) {
+            target.delete()
+            throw new GradleException("OpenAL Soft source: sha256 ${sha}, expected ${expected}")
+        }
+        logger.lifecycle("OpenAL Soft source: ${target} (attach it to the release)")
+    }
+}
+
+// For Altrender's node: resources of its jar (natives + licence texts).
+ext.nativesResources = files(packNatives)
+
+// For Altrender's node: nested by remapJar, and on the dev runtime classpath.
+ext.nestedJarFiles = files(nest.map { it.outputDirectory.get().asFileTree.matching { include '*.jar' }.files })
+ext.nestedJarFiles.builtBy(nest)

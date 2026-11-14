@@ -1,0 +1,103 @@
+# Builds Altrender and AltShaders for every Minecraft version and publishes them as a GitHub Release, with what the
+# release must carry (development.md, legal hygiene checklist): both mods' jars and their -sources jars (LGPL-3.0),
+# the OpenAL Soft source the shipped natives were built from (LGPL, checksum-pinned), THIRD_PARTY.md, and checksums.
+#
+# Release: set mod_version in gradle.properties, then push the tag v<mod_version> (e.g. v0.1.0). A version with a
+# pre-release part (0.1.0-alpha.3) is published as a pre-release. Run by hand (workflow_dispatch) with an existing
+# tag to build and upload again (files of the same name are replaced).
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and publish (v<mod_version>)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check the tag against mod_version
+        run: |
+          version=$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '[:space:]')
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG doesn't match mod_version $version (expected v$version)"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build the jars (with sources)
+        run: ./build.sh --sources --no-daemon --console=plain
+
+      - name: OpenAL Soft source (checksum-verified)
+        run: ./gradlew :altrender:lwjgl2:openalSource --no-daemon --console=plain
+
+      - name: Collect the release files
+        run: |
+          mkdir dist
+          cp libs/*.jar dist/
+          cp altrender/lwjgl2/build/release/openal-soft-*.tar.gz dist/
+          cp THIRD_PARTY.md dist/
+          ls dist/altrender-*.jar dist/altshaders-*.jar > /dev/null
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          ls -l dist
+
+      - name: Release notes
+        run: |
+          cat > notes.md <<EOF
+          Altrender and AltShaders ${VERSION}, one jar per mod and Minecraft version (\`+mc<version>\` in the name).
+
+          **Needs:** Ornithe gen2 (Fabric Loader) and LegacyFix, Java 21 or newer, a GPU with OpenGL 3.3
+          (compatibility profile); Linux or Windows, x64 or arm64. AltShaders needs Altrender of the same version.
+
+          **Attached:**
+          - the mod jars, and their \`-sources\` jars (LGPL-3.0-only);
+          - \`openal-soft-*.tar.gz\`: the source of the OpenAL Soft build Altrender ships (LGPL; see the jar's
+            \`META-INF/licenses/altrender/natives/OPENAL_SOFT_SOURCE.txt\`);
+          - \`THIRD_PARTY.md\`: the third-party code and libraries in the jars and their licences (texts in each jar's
+            \`META-INF/licenses/\`);
+          - \`SHA256SUMS.txt\`.
+          EOF
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=()
+          case "$VERSION" in *-*) pre=(--prerelease) ;; esac
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --verify-tag --title "Altrender & AltShaders $VERSION" \
+              --notes-file notes.md "${pre[@]}"
+          fi

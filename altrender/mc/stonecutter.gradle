@@ -1,0 +1,6 @@
+// Stonecutter controller for Altrender's Minecraft nodes (:altrender:mc:<mc>). See settings.gradle.
+plugins {
+    id 'dev.kikugie.stonecutter'
+}
+
+stonecutter.active 'b1.7.3'

@@ -1,0 +1,40 @@
+# gradle
+.gradle/
+build/
+tools/
+# ... but not source packages named build (build-logic's com.coredex.altrender.build)
+!**/src/**/build/
+# ./build.sh output
+/libs/
+out/
+classes/
+.kotlin/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+bin/
+.classpath
+.project
+*.launch
+
+# runs (game directories of the dev runs)
+run/
+
+# java / crash dumps
+hs_err_*.log
+replay_*.log
+*.hprof
+*.jfr
+
+# OS
+.DS_Store
+
+# local captures and caches (apitrace, downloaded shader packs: never committed, development.md 0.3)
+*.trace
+/packs-cache/
+/local.properties

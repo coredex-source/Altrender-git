@@ -1,0 +1,39 @@
+/*
+ * Copyright (C) 2026 Coredex
+ * SPDX-License-Identifier: LGPL-3.0-only
+ *
+ * Portions of this file are derived from Iris (https://github.com/IrisShaders/Iris),
+ * common/src/main/java/kroppeb/stareval/element/token/UnaryOperatorToken.java at commit bff1e69c, licensed under LGPL-3.0.
+ * Modified by Coredex, 2026-11-13: AltShaders' packages; Java's own collections and small value types in place of
+ * Guava, fastutil and JOML; uniforms uploaded through Altrender's API.
+ * See THIRD_PARTY.md and docs/provenance.md.
+ */
+package com.coredex.altshaders.uniform.stareval.element.token;
+
+import com.coredex.altshaders.uniform.stareval.element.ExpressionElement;
+import com.coredex.altshaders.uniform.stareval.element.PriorityOperatorElement;
+import com.coredex.altshaders.uniform.stareval.element.tree.UnaryExpressionElement;
+import com.coredex.altshaders.uniform.stareval.parser.UnaryOp;
+
+public class UnaryOperatorToken extends Token implements PriorityOperatorElement {
+	private final UnaryOp op;
+
+	public UnaryOperatorToken(UnaryOp op) {
+		this.op = op;
+	}
+
+	@Override
+	public String toString() {
+		return "UnaryOp{" + this.op + "}";
+	}
+
+	@Override
+	public int getPriority() {
+		return -1;
+	}
+
+	@Override
+	public UnaryExpressionElement resolveWith(ExpressionElement right) {
+		return new UnaryExpressionElement(this.op, right);
+	}
+}

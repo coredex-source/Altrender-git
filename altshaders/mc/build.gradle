@@ -1,0 +1,27 @@
+// Central script for every AltShaders node (:altshaders:mc:<mc>): the shared node setup plus altshaders:common.
+// AltShaders compiles against Altrender's public API only (development.md 0.2); Altrender itself is a runtime mod.
+apply from: rootProject.file('gradle/mc-node.gradle')
+
+base {
+    archivesName = 'altshaders'
+}
+
+def altrenderNode = ":altrender:mc:${stonecutter.current.project}"
+
+dependencies {
+    compileOnly project(':altrender:api')
+    compileOnly project(':altshaders:common')
+    bundledJava project(path: ':altshaders:common', configuration: 'javaSources')
+    bundledResources project(path: ':altshaders:common', configuration: 'resourceSources')
+
+    // Dev runs load Altrender too (AltShaders requires it).
+    runtimeOnly project(path: altrenderNode, configuration: 'namedElements')
+}
+
+loom {
+    mods {
+        altshaders {
+            sourceSet sourceSets.main
+        }
+    }
+}

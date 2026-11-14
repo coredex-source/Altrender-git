@@ -1,0 +1,41 @@
+/*
+ * Copyright (C) 2026 Coredex
+ * SPDX-License-Identifier: LGPL-3.0-only
+ *
+ * Portions of this file are derived from Iris (https://github.com/IrisShaders/Iris),
+ * common/src/main/java/net/irisshaders/iris/gl/texture/TextureType.java at commit bff1e69c, licensed under LGPL-3.0.
+ * Modified by Coredex, 2026-11-13: AltShaders' packages; no Minecraft, fastutil, Guava or JOML types (Java's own
+ * collections and small value types instead); no GL calls (formats and blend modes are data here).
+ * See THIRD_PARTY.md and docs/provenance.md.
+ */
+package com.coredex.altshaders.pack.gl;
+
+import org.lwjgl.opengl.GL32C;
+
+import java.util.Optional;
+
+public enum TextureType {
+	TEXTURE_1D(GL32C.GL_TEXTURE_1D),
+	TEXTURE_2D(GL32C.GL_TEXTURE_2D),
+	TEXTURE_3D(GL32C.GL_TEXTURE_3D),
+	TEXTURE_RECTANGLE(GL32C.GL_TEXTURE_RECTANGLE);
+
+	private final int glType;
+
+	TextureType(int glType) {
+		this.glType = glType;
+	}
+
+	public static Optional<TextureType> fromString(String name) {
+		try {
+			return Optional.of(TextureType.valueOf(name));
+		} catch (IllegalArgumentException e) {
+			return Optional.empty();
+		}
+	}
+
+	public int getGlType() {
+		return glType;
+	}
+
+}

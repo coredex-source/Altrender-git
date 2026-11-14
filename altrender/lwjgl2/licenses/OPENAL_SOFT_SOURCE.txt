@@ -1,0 +1,15 @@
+OpenAL Soft in Altrender
+========================
+
+Altrender ships OpenAL Soft (LGPL-2.0-or-later, see openal_soft_license.txt) unmodified, as LWJGL 3.4.3 builds it:
+libopenal.so / OpenAL.dll under altrender/natives/<os>-<arch>/ in this jar.
+
+Source: OpenAL Soft at commit 7f9c6de1162b1d4604b9a2f8bcd6c53021566221
+  - attached to every Altrender release as openal-soft-7f9c6de1162b1d4604b9a2f8bcd6c53021566221.tar.gz
+    (sha256 a6423b0efd2fee3d7d07c169388e7bf453aab5d5b57fb9bc335d970b7e44e397)
+  - also at https://github.com/LWJGL-CI/openal-soft/tree/7f9c6de1162b1d4604b9a2f8bcd6c53021566221
+    (the same commit is in https://github.com/kcat/openal-soft)
+  - build scripts: LWJGL's, https://github.com/LWJGL/lwjgl3 (tag 3.4.3) and https://github.com/LWJGL-CI/openal-soft
+
+You may replace the OpenAL Soft library with your own build: put it in the folder Altrender extracts its natives to
+(<game directory>/altrender/natives/<id>/), or point org.lwjgl.librarypath at another folder.

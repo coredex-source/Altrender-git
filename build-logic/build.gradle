@@ -1,0 +1,22 @@
+plugins {
+    id 'java-gradle-plugin'
+}
+
+dependencies {
+    // Same ASM release as Fabric Loader 0.20.1's profile.
+    implementation 'org.ow2.asm:asm-tree:9.10.1'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+gradlePlugin {
+    plugins {
+        altrenderBuild {
+            id = 'altrender.build'
+            implementationClass = 'com.coredex.altrender.build.AltrenderBuildPlugin'
+        }
+    }
+}

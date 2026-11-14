@@ -1,0 +1,153 @@
+// Shared by every Minecraft node of both Stonecutter trees (:altrender:mc:<mc>, :altshaders:mc:<mc>).
+// The tree's central script (<tree>/build.gradle) applies this, then adds what is specific to its mod.
+//
+// Dev-run switches (-Paltrender.*): gradle/dev-runs.gradle.
+
+apply plugin: 'net.fabricmc.fabric-loom-remap'
+apply plugin: 'ploceus'
+
+def mc = stonecutter.current.project
+def mcProps = new Properties()
+rootProject.file("versions/${mc}.properties").withInputStream { mcProps.load(it) }
+mcProps.each { k, v -> project.ext.set(k as String, v) }
+
+def javaVersion = rootProject.java_version as int
+def withLegacyFix = providers.gradleProperty('altrender.legacyfix').getOrElse('true').toBoolean()
+
+// One group per mod (see the root build.gradle): both trees name their nodes after the Minecraft version.
+group = "${rootProject.maven_group}.${path.split(':')[1]}"
+version = "${rootProject.mod_version}+mc${mc}"
+
+ploceus.setIntermediaryGeneration(rootProject.intermediary_generation as int)
+
+repositories {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = 'Modrinth'
+                url = uri('https://api.modrinth.com/maven')
+            }
+        }
+        filter {
+            includeGroup('maven.modrinth')
+        }
+    }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${mcProps.minecraft_version}"
+    // Pre-1.3: separate client and server jars, so exceptions/signatures/nests come per side (Ploceus' Split providers).
+    // Ploceus needs these before the mappings dependency.
+    clientExceptions ploceus.raven(mcProps.raven_client_build, 'client')
+    serverExceptions ploceus.raven(mcProps.raven_server_build, 'server')
+    clientSignatures ploceus.sparrow(mcProps.sparrow_client_build, 'client')
+    serverSignatures ploceus.sparrow(mcProps.sparrow_server_build, 'server')
+    clientNests ploceus.nests(mcProps.nests_client_build, 'client')
+    serverNests ploceus.nests(mcProps.nests_server_build, 'server')
+    mappings ploceus.featherMappings(mcProps.feather_build)
+
+    modImplementation "net.fabricmc:fabric-loader:${rootProject.fabric_loader_version}"
+
+    // Runtime dependency, not bundled (owner requirement 10). Dev runs only.
+    if (withLegacyFix) {
+        modLocalRuntime "maven.modrinth:legacyfix:${rootProject.legacyfix_version}"
+    }
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(javaVersion)
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = javaVersion
+}
+
+// Sources and resources of the plain-Java projects this mod bundles (api, common): compiled into this node, so the
+// remapped jar holds the whole mod. compileOnly on the projects themselves is for the IDE and transitive dependencies.
+configurations {
+    bundledJava {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+    bundledResources {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+}
+tasks.named('compileJava', JavaCompile) {
+    dependsOn(configurations.bundledJava)
+    source(configurations.bundledJava)
+}
+tasks.named('processResources', ProcessResources) {
+    dependsOn(configurations.bundledResources)
+    from(configurations.bundledResources)
+}
+tasks.named('sourcesJar', Jar) {
+    dependsOn(configurations.bundledJava, configurations.bundledResources)
+    from(configurations.bundledJava)
+    from(configurations.bundledResources)
+}
+
+// fabric.mod.json templating. Every key used there must be listed here.
+def expandProps = [
+        version             : project.version,
+        mod_version         : rootProject.mod_version,
+        minecraft_dependency: mcProps.minecraft_dependency,
+        loader_version      : rootProject.fabric_loader_version,
+        java_version        : javaVersion,
+        license             : rootProject.license,
+        mod_author          : rootProject.mod_author,
+]
+tasks.named('processResources', ProcessResources) {
+    inputs.properties(expandProps)
+    filesMatching('fabric.mod.json') {
+        expand(expandProps)
+    }
+}
+
+tasks.named('jar', Jar) {
+    // LGPL-3.0 is a set of additional permissions on top of GPL-3.0: ship both texts.
+    // Lazy: the central script sets archivesName (the mod id) after applying this script.
+    def licenseDir = base.archivesName.map { "META-INF/licenses/${it}" }
+    from(rootProject.file('COPYING')) { into(licenseDir) }
+    from(rootProject.file('COPYING.LESSER')) { into(licenseDir) }
+    // Third-party notices of code in Altrender's common module (Reese's Sodium Options, MIT: the UI framework).
+    if (project.path.startsWith(':altrender:')) {
+        from(rootProject.file('altrender/common/licenses')) { into(licenseDir) }
+    }
+}
+
+// LWJGL 3 and the LWJGL2 layer (altrender:lwjgl2, development.md 0.4) replace the game's LWJGL2 in dev runs too: their
+// jars on the runtime classpath, the game's LWJGL2 jars off it. (In production they win by Knot's load order.)
+evaluationDependsOn(':altrender:lwjgl2')
+def lwjglNested = rootProject.project(':altrender:lwjgl2').nestedJarFiles
+dependencies {
+    runtimeOnly lwjglNested
+}
+configurations.matching { it.name in ['minecraftRuntimeLibraries', 'minecraftClientRuntimeLibraries'] }.configureEach {
+    exclude group: 'org.lwjgl.lwjgl'
+}
+// Compile against what runs too: LWJGL 3 + the layer (which has LWJGL2's API under the same names), not the game's
+// LWJGL2 (same class names as LWJGL 3: both on one classpath would be ambiguous for common's renderer code).
+configurations.matching { it.name in ['minecraftLibraries', 'minecraftClientLibraries'] }.configureEach {
+    exclude group: 'org.lwjgl.lwjgl'
+}
+dependencies {
+    compileOnly project(':altrender:lwjgl2')
+    rootProject.lwjgl_modules.split(',').each { compileOnly "org.lwjgl:${it.trim()}:${rootProject.lwjgl_version}" }
+}
+
+loom {
+    // One game directory per Minecraft version, shared by both mods' runs (git-ignored run/).
+    runConfigs.configureEach {
+        runDir = project.relativePath(rootProject.file(findProperty('altrender.runDir') ?: "run/${mc}"))
+        if (withLegacyFix) {
+            // LegacyFix's java-modules patch exits without it (LegacyFix 26.10).
+            vmArg '--add-opens=java.base/java.lang=ALL-UNNAMED'
+        }
+    }
+}
+
+apply from: rootProject.file('gradle/dev-runs.gradle')

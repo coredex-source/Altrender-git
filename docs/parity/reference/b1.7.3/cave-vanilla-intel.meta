@@ -1,0 +1,19 @@
+scene=cave
+tag=vanilla-intel
+seed=20261112
+dimension=overworld
+anchor=35,40,34
+camera=32.00,40.00,31.00 yaw=-45.0 pitch=10.0
+time=6000
+rain=0.0
+fov=70.0
+size=1280x720
+pack=ar_debug.zip
+options={fancyGraphics=true, ao=true, viewDistance=1, fpsLimit=0}
+settle_frames=2664
+gl_version=4.6 (Compatibility Profile) Mesa 26.1.8
+gl_renderer=Mesa Intel(R) UHD Graphics (CML GT2)
+gl_vendor=Intel
+java=21.0.12.1+1-LTS
+altrender_renderer=default
+altrender_tier=default
