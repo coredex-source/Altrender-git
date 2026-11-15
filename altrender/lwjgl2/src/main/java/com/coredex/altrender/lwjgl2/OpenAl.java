@@ -13,7 +13,8 @@ import org.lwjgl.openal.ALCCapabilities;
 
 /**
  * LWJGL2's {@code AL.create()} on LWJGL 3 + OpenAL Soft: the default device and one context, current for the process.
- * The device and context are closed by a shutdown hook (LWJGL 3's own {@code AL.destroy()} only clears its AL state).
+ * The device and context are closed by a shutdown hook (LWJGL 3's own {@code AL.destroy()} only clears its AL state),
+ * once the game has let go of them.
  */
 public final class OpenAl {
 
@@ -49,7 +50,17 @@ public final class OpenAl {
 		return context != 0;
 	}
 
+	/**
+	 * At exit, close the context and device only if the game has let go of them: its sound library's cleanup calls
+	 * {@code AL.destroy()} on a normal quit, which clears LWJGL 3's AL capabilities. When the process ends without that
+	 * (killed by the launcher or a signal, or after a crash), the game's sound threads may still be running; taking the
+	 * context away under them made each of their calls fail ("Illegal call" lines at the end of the log). The OS frees
+	 * the device then.
+	 */
 	private static synchronized void close() {
+		if (context != 0 && stillInUse()) {
+			return;
+		}
 		if (context != 0) {
 			ALC10.alcMakeContextCurrent(0);
 			ALC10.alcDestroyContext(context);
@@ -58,6 +69,16 @@ public final class OpenAl {
 		if (device != 0) {
 			ALC10.alcCloseDevice(device);
 			device = 0;
+		}
+	}
+
+	/** LWJGL 3's process-wide AL capabilities are still set: the game hasn't called {@code AL.destroy()}. */
+	private static boolean stillInUse() {
+		try {
+			AL.getCapabilities();
+			return true;
+		} catch (IllegalStateException released) {
+			return false;
 		}
 	}
 }
