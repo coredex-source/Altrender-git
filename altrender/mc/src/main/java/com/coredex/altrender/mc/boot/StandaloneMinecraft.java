@@ -33,10 +33,10 @@ public final class StandaloneMinecraft extends Minecraft {
 	public static void startFromApplet(Applet applet) {
 		String server = applet.getParameter("server");
 		String port = applet.getParameter("port");
-		Session session = session(applet.getParameter("username"), applet.getParameter("sessionid"));
-		session.password = applet.getParameter("mppass");
-		Thread game = launch(session, server, port != null ? parsePort(port) : 25565,
-				"true".equalsIgnoreCase(applet.getParameter("fullscreen")));
+		StandaloneMinecraft minecraft = create("true".equalsIgnoreCase(applet.getParameter("fullscreen")));
+		minecraft.session = session(applet.getParameter("username"), applet.getParameter("sessionid"));
+		minecraft.session.password = applet.getParameter("mppass");
+		Thread game = launch(minecraft, server, port != null ? parsePort(port) : 25565);
 		// The game ends the process itself (System.exit after quitting, or after a crash); until then, keep the launcher
 		// from showing its frame.
 		while (game.isAlive()) {
@@ -56,7 +56,9 @@ public final class StandaloneMinecraft extends Minecraft {
 			host = server.substring(0, server.lastIndexOf(':'));
 			port = parsePort(server.substring(server.lastIndexOf(':') + 1));
 		}
-		launch(session(username, sessionId), host, port, false);
+		StandaloneMinecraft minecraft = create(false);
+		minecraft.session = session(username, sessionId);
+		launch(minecraft, host, port);
 	}
 
 	private static Session session(String username, String sessionId) {
@@ -72,10 +74,19 @@ public final class StandaloneMinecraft extends Minecraft {
 		}
 	}
 
-	private static Thread launch(Session session, String server, int port, boolean fullscreen) {
+	/**
+	 * The game before its {@link Session}, as vanilla's {@code MinecraftApplet.init}: {@code Session}'s static block list
+	 * loads {@code Block} and {@code Item}, and mods set up before those in {@code Minecraft}'s constructor (OSL bootstraps
+	 * its registries right after {@code Object.<init>}; without that, its item registry rejects the achievements' mapper:
+	 * "registry minecraft:item is not synced").
+	 */
+	private static StandaloneMinecraft create(boolean fullscreen) {
 		StandaloneMinecraft game = new StandaloneMinecraft(854, 480, fullscreen);
 		game.hostAddress = "www.minecraft.net";
-		game.session = session;
+		return game;
+	}
+
+	private static Thread launch(StandaloneMinecraft game, String server, int port) {
 		if (server != null) {
 			game.setStartupServer(server, port);
 		}

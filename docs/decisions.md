@@ -27,7 +27,7 @@ Dated, one line each (development.md 0.6). Newest at the bottom.
   routes it to slf4j when present; the Ornithe production profile has only ASM, Mixin, Calamus and Fabric Loader (no
   slf4j/log4j), so the fallback is stdout in Fabric's console format.
 - **Banner hook:** `Minecraft#init()` HEAD (Feather name), from a mixin, so the banner also proves the mixin applied.
-- **OSL: not needed.** `preLaunch` and mixins cover everything so far.
+- **OSL: not needed.** `preLaunch` and mixins cover everything so far. Altrender must still work when OSL is installed (2026-11-15 below).
 - **LegacyFix: `recommends`, not `depends`** (owner rule: "if the game boots without it then only recommends"). b1.7.3
   boots without it on Java 21 and 25, in the dev run and in a production-shaped launch of the built jars.
   - What 26.10 applies on b1.7.3: proxy (auth, skins, assets), java-modules, bitdepth, disable-controllers, deawt, mouse,
@@ -690,3 +690,20 @@ Dated, one line each (development.md 0.6). Newest at the bottom.
   `GlState` additions row); the README and THIRD_PARTY.md credits and the MIT notice in Altrender's jar
   (`META-INF/licenses/altrender/`) are gone; comments say "Altrender" or nothing. Fine legally: the owner holds the
   copyright to both, so the code needs no notice in Altrender. Credits can come back once the backend is published.
+
+## 2026-11-15 (working alongside OSL)
+
+- **Altrender works with OSL installed** (owner: mods "don't function together"). Two causes, both Altrender's:
+  - `MinecraftAppletMixin` cancelled `MinecraftApplet.init` at HEAD and blocked there, so other mods' HEAD injections
+    in `init` never ran. OSL starts its `init`/`client-init` entrypoints and launch events from there
+    (osl-entrypoints' `MinecraftAppletMixin`), so they never ran. The takeover now injects at `init`'s first own
+    instruction (the `PUTFIELD canvas`), after every HEAD injection whatever the mixin order.
+  - `StandaloneMinecraft` created the `Session` before the game. `Session`'s static block list loads `Block` → `Item`
+    → `Stats` → `Achievements` before `Minecraft`'s constructor, where osl-registries bootstraps its registries (right
+    after `Object.<init>`), so osl-items' achievement mapper failed: "registry minecraft:item is not synced". Now the
+    game is constructed first, then its session, as vanilla's `MinecraftApplet.init` does.
+- Checked in a production-shaped Knot launch with the Prism instance's libraries: OSL 0.24.0 + Mod Menu 0.5.0 +
+  LegacyFix 26.10 + both mods reach the title-screen path on Java 21 and 25; without OSL unchanged (Java 25).
+- Java 8: not supported (owner requirement 2, Java 21+); the owner parked it on 2026-11-15. Options were a source
+  rewrite (~150 of 490 files: records in the API, switch arrows, text blocks, Java 11 APIs) or a build-time bytecode
+  downgrade (JvmDowngrader, LGPL-2.1-or-later; owner's OK needed to use it).

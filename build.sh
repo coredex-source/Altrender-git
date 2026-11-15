@@ -4,7 +4,8 @@
 #
 #   ./build.sh [--sources] [extra Gradle arguments]
 #
-# --sources also copies the -sources jars. libs/ is emptied of jars first, so it holds only this build's.
+# --sources also copies the -sources jars. libs/ is emptied of jars first and gets only jars of the current mod_version
+# (Gradle leaves older versions' jars in each build/libs/).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
@@ -20,10 +21,11 @@ done
 
 ./gradlew build "${gradle_args[@]}"
 
+version=$(sed -n 's/^mod_version=//p' gradle.properties | tr -d '[:space:]')
 mkdir -p libs
 rm -f libs/*.jar
 copied=0
-for jar in altrender/mc/versions/*/build/libs/*.jar altshaders/mc/versions/*/build/libs/*.jar; do
+for jar in altrender/mc/versions/*/build/libs/*-"$version"+mc*.jar altshaders/mc/versions/*/build/libs/*-"$version"+mc*.jar; do
   [ -e "$jar" ] || continue
   if [[ "$jar" == *-sources.jar ]] && [ "$sources" = false ]; then
     continue
@@ -33,6 +35,6 @@ for jar in altrender/mc/versions/*/build/libs/*.jar altshaders/mc/versions/*/bui
   copied=$((copied + 1))
 done
 if [ "$copied" -eq 0 ]; then
-  echo "build.sh: no jars found under */mc/versions/*/build/libs" >&2
+  echo "build.sh: no $version jars found under */mc/versions/*/build/libs" >&2
   exit 1
 fi
